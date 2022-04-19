@@ -17,6 +17,7 @@ import org.checkerframework.javacutil.AnnotationUtils;
 import javax.lang.model.element.AnnotationMirror;
 import java.lang.annotation.Annotation;
 
+import java.util.Arrays;
 import java.util.Set;
 
 import org.checkerframework.checker.dividebyzero.qual.*;
@@ -39,6 +40,64 @@ public class DivByZeroTransfer extends CFTransfer {
         /** / */ DIVIDE,
         /** % */ MOD
     }
+
+    // All possible points in our lattice
+    private final AnnotationMirror BOT = reflect(Bot.class);
+    private final AnnotationMirror NEG = reflect(Negative.class);
+    private final AnnotationMirror ZER = reflect(Zero.class);
+    private final AnnotationMirror POS = reflect(Positive.class);
+    private final AnnotationMirror NZE = reflect(NonZero.class);
+    private final AnnotationMirror TOP = reflect(Top.class);
+
+    // Transfer table used for DIVIDE and MOD operators. Defines (point, point) -> point
+    private AnnotationMirror[][] DIVIDE_TRANSFER = new AnnotationMirror[][]{
+            /** Bot   **/  {BOT, BOT, BOT, BOT, BOT, BOT},
+            /** Neg   **/  {BOT, POS, TOP, NEG, NZE, TOP},
+            /** Zero  **/  {BOT, ZER, TOP, ZER, ZER, TOP},
+            /** Pos   **/  {BOT, NEG, TOP, POS, NZE, TOP},
+            /** !Zero **/  {BOT, NZE, TOP, NZE, NZE, TOP},
+            /** Top   **/  {BOT, TOP, TOP, TOP, TOP, TOP},
+    };
+
+    // Transfer table used for PLUS and MINUS operators. Defines (point, point) -> point
+    private AnnotationMirror[][] PLUS_TRANSFER = new AnnotationMirror[][]{
+            /** Bot   **/  {BOT, BOT, BOT, BOT, BOT, BOT},
+            /** Neg   **/  {BOT, NEG, NEG, TOP, TOP, TOP},
+            /** Zero  **/  {BOT, NEG, ZER, POS, NZE, TOP},
+            /** Pos   **/  {BOT, TOP, ZER, POS, TOP, TOP},
+            /** !Zero **/  {BOT, TOP, NZE, TOP, TOP, TOP},
+            /** Top   **/  {BOT, TOP, TOP, TOP, TOP, TOP},
+    };
+
+    // Transfer table used for TIMES operators. Defines (point, point) -> point
+    private AnnotationMirror[][] TIMES_TRANSFER = new AnnotationMirror[][]{
+            /** Bot   **/  {BOT, BOT, BOT, BOT, BOT, BOT},
+            /** Neg   **/  {BOT, POS, ZER, NEG, NZE, TOP},
+            /** Zero  **/  {BOT, ZER, ZER, ZER, ZER, ZER},
+            /** Pos   **/  {BOT, NEG, ZER, POS, NZE, TOP},
+            /** !Zero **/  {BOT, NZE, ZER, NZE, NZE, TOP},
+            /** Top   **/  {BOT, TOP, ZER, TOP, TOP, TOP},
+    };
+
+    // Refinement table used for REFINEMENT. Defines (op, point) -> point
+    private AnnotationMirror[][] REFINEMENT = new AnnotationMirror[][]{
+            /** EQ   **/  {BOT, NEG, ZER, POS, NZE, TOP},
+            /** NE   **/  {TOP, TOP, NZE, TOP, ZER, BOT},
+            /** LT   **/  {BOT, NEG, NEG, TOP, TOP, TOP},
+            /** GT   **/  {BOT, TOP, POS, POS, TOP, TOP},
+            /** LE   **/  {BOT, NEG, TOP, TOP, TOP, TOP},
+            /** GE   **/  {BOT, TOP, TOP, POS, TOP, TOP},
+    };
+
+    // Transfer table used for TIMES operators. Defines (point, point) -> point
+    private AnnotationMirror[][] GLB = new AnnotationMirror[][]{
+            /** Bot   **/  {BOT, BOT, BOT, BOT, BOT, BOT},
+            /** Neg   **/  {BOT, NEG, BOT, BOT, NEG, NEG},
+            /** Zero  **/  {BOT, BOT, ZER, BOT, BOT, ZER},
+            /** Pos   **/  {BOT, BOT, BOT, POS, POS, POS},
+            /** !Zero **/  {BOT, NEG, BOT, POS, NZE, NZE},
+            /** Top   **/  {BOT, NEG, ZER, POS, NZE, TOP},
+    };
 
     // ========================================================================
     // Transfer functions to implement
@@ -71,8 +130,23 @@ public class DivByZeroTransfer extends CFTransfer {
             Comparison operator,
             AnnotationMirror lhs,
             AnnotationMirror rhs) {
-        // TODO
-        return lhs;
+
+        // Find what we know about an arbitrary LHS given operator and RHS
+        int i = indexOf(operator);
+        int j = indexOf(rhs);
+        AnnotationMirror refinement = REFINEMENT[i][j];
+
+        // We know what we used to know about LHS and refinement
+//        return glb(lhs, refinement);
+        i = indexOf(lhs);
+        j = indexOf(refinement);
+        return GLB[i][j];
+    }
+
+    /** Returns the index of the comparison operator as used in the refinement table **/
+    private int indexOf(Comparison operator) {
+        Comparison[] arr = {Comparison.EQ, Comparison.NE, Comparison.LT, Comparison.GT, Comparison.LE, Comparison.GE};
+        return Arrays.asList(arr).indexOf(operator);
     }
 
     /**
@@ -93,9 +167,43 @@ public class DivByZeroTransfer extends CFTransfer {
             BinaryOperator operator,
             AnnotationMirror lhs,
             AnnotationMirror rhs) {
-        // TODO
+
+        int i = indexOf(lhs);
+        int j = indexOf(rhs);
+
+        switch (operator) {
+            case MOD:
+            case DIVIDE:
+                return DIVIDE_TRANSFER[i][j];
+            case TIMES:
+                return TIMES_TRANSFER[i][j];
+            case PLUS:
+                return PLUS_TRANSFER[i][j];
+            case MINUS:
+                j = indexOf(negate(rhs));  // a - b == a + (-b)
+                return PLUS_TRANSFER[i][j];
+        }
         return top();
     }
+
+    /** Returns the index of the point in the lattice used by our lookup tables */
+    private int indexOf(AnnotationMirror op) {
+        AnnotationMirror[] arr = {BOT, NEG, ZER, POS, NZE, TOP};
+        for (int i = 0; i < arr.length; i++) {
+            if (equal(op, arr[i])) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /** Returns the negated version of the point in the lattice (e.g. -POS => NEG) **/
+    private AnnotationMirror negate(AnnotationMirror op) {
+        AnnotationMirror[] negated = {BOT, POS, ZER, NEG, NZE, TOP};
+        return negated[indexOf(op)];
+    }
+
 
     // ========================================================================
     // Useful helpers

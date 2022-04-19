@@ -21,6 +21,10 @@ public class DivByZeroVisitor extends BaseTypeVisitor<DivByZeroAnnotatedTypeFact
         /* x %  y */ Tree.Kind.REMAINDER,
         /* x %= y */ Tree.Kind.REMAINDER_ASSIGNMENT);
 
+    private static final Set<TypeKind> INT_TYPES = EnumSet.of(
+            TypeKind.INT,
+            TypeKind.LONG);
+
     /**
      * Determine whether to report an error at the given binary AST node.
      * The error text is defined in the messages.properties file.
@@ -28,9 +32,23 @@ public class DivByZeroVisitor extends BaseTypeVisitor<DivByZeroAnnotatedTypeFact
      * @return true if an error should be reported, false otherwise
      */
     private boolean errorAt(BinaryTree node) {
-        // A BinaryTree can represent any binary operator, including + or -.
-        // TODO
-        return false;
+
+        // Is this an operator that can have divide by zero errors?
+        Tree.Kind operator = node.getKind();
+        if (!DIVISION_OPERATORS.contains(operator)) {
+            return false;
+        }
+
+        // Can't have a divide by zero unless both sides are INT_TYPES
+        // E.g. (0.0 / 0)  =>  (0.0 / 0.0)  =>  Double.NaN (?)
+        ExpressionTree lhs = node.getLeftOperand();
+        ExpressionTree rhs = node.getRightOperand();
+        if (!isInt(lhs) || !isInt(rhs)) {
+            return false;
+        }
+
+        System.out.println(node + ";" + hasAnnotation(rhs, Zero.class) + ";" + hasAnnotation(rhs, Top.class));
+        return hasAnnotation(rhs, Zero.class) || hasAnnotation(rhs, Top.class);
     }
 
     /**
@@ -42,16 +60,24 @@ public class DivByZeroVisitor extends BaseTypeVisitor<DivByZeroAnnotatedTypeFact
     private boolean errorAt(CompoundAssignmentTree node) {
         // A CompoundAssignmentTree represents any binary operator combined with an assignment,
         // such as "x += 10".
-        // TODO
-        return false;
+
+        // Is this an operator that can have divide by zero errors?
+        Tree.Kind operator = node.getKind();
+        if (!DIVISION_OPERATORS.contains(operator)) {
+            return false;
+        }
+
+        // Can't have a divide unless rhs is an INT_TYPES
+        ExpressionTree exp = node.getExpression();
+        if (!isInt(exp)) {
+            return false;
+        }
+
+        return hasAnnotation(exp, Zero.class) || hasAnnotation(exp, Top.class);
     }
 
     // ========================================================================
     // Useful helpers
-
-    private static final Set<TypeKind> INT_TYPES = EnumSet.of(
-        TypeKind.INT,
-        TypeKind.LONG);
 
     private boolean isInt(Tree node) {
         return INT_TYPES.contains(atypeFactory.getAnnotatedType(node).getKind());
@@ -73,6 +99,7 @@ public class DivByZeroVisitor extends BaseTypeVisitor<DivByZeroAnnotatedTypeFact
         if (isInt(node)) {
             if (errorAt(node)) {
                 checker.reportError(node, "divide.by.zero");
+//                System.out.println("ERROR: " + node);
             }
         }
         return super.visitBinary(node, p);
