@@ -89,15 +89,6 @@ public class DivByZeroTransfer extends CFTransfer {
             /** GE   **/  {BOT, TOP, TOP, POS, TOP, TOP},
     };
 
-    // Transfer table used for TIMES operators. Defines (point, point) -> point
-    private AnnotationMirror[][] GLB = new AnnotationMirror[][]{
-            /** Bot   **/  {BOT, BOT, BOT, BOT, BOT, BOT},
-            /** Neg   **/  {BOT, NEG, BOT, BOT, NEG, NEG},
-            /** Zero  **/  {BOT, BOT, ZER, BOT, BOT, ZER},
-            /** Pos   **/  {BOT, BOT, BOT, POS, POS, POS},
-            /** !Zero **/  {BOT, NEG, BOT, POS, NZE, NZE},
-            /** Top   **/  {BOT, NEG, ZER, POS, NZE, TOP},
-    };
 
     // ========================================================================
     // Transfer functions to implement
@@ -137,10 +128,7 @@ public class DivByZeroTransfer extends CFTransfer {
         AnnotationMirror refinement = REFINEMENT[i][j];
 
         // We know what we used to know about LHS and refinement
-//        return glb(lhs, refinement);
-        i = indexOf(lhs);
-        j = indexOf(refinement);
-        return GLB[i][j];
+        return glb(lhs, refinement);
     }
 
     /** Returns the index of the comparison operator as used in the refinement table **/

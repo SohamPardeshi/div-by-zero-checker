@@ -47,7 +47,6 @@ public class DivByZeroVisitor extends BaseTypeVisitor<DivByZeroAnnotatedTypeFact
             return false;
         }
 
-        System.out.println(node + ";" + hasAnnotation(rhs, Zero.class) + ";" + hasAnnotation(rhs, Top.class));
         return hasAnnotation(rhs, Zero.class) || hasAnnotation(rhs, Top.class);
     }
 
